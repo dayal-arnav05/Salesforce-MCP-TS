@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  salesforce-mcp-server:
+    build: .
+    container_name: salesforce-mcp-server
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - HOST=0.0.0.0
+      # Salesforce connection settings (uncomment and configure as needed)
+      # - SALESFORCE_CONNECTION_TYPE=User_Password
+      # - SALESFORCE_USERNAME=your_username
+      # - SALESFORCE_PASSWORD=your_password
+      # - SALESFORCE_TOKEN=your_security_token
+      # - SALESFORCE_INSTANCE_URL=https://login.salesforce.com
+      # 
+      # Or for OAuth 2.0:
+      # - SALESFORCE_CONNECTION_TYPE=OAuth_2.0_Client_Credentials
+      # - SALESFORCE_CLIENT_ID=your_client_id
+      # - SALESFORCE_CLIENT_SECRET=your_client_secret
+      # - SALESFORCE_INSTANCE_URL=https://your-domain.my.salesforce.com
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - mcp-network
+
+networks:
+  mcp-network:
+    driver: bridge
