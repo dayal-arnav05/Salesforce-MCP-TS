@@ -10,7 +10,7 @@ COPY package*.json ./
 COPY . .
 
 # Install dependencies
-RUN npm ci
+RUN npm install
 
 # Build the application
 RUN npm run build
