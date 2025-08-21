@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import * as dotenv from "dotenv";
+import { createServer, IncomingMessage, ServerResponse } from "http";
+import { URL } from "url";
 
 import { createSalesforceConnection } from "./utils/connection.js";
 import { SEARCH_OBJECTS, handleSearchObjects } from "./tools/search.js";
@@ -336,9 +338,68 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 });
 
 async function runServer() {
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
-  console.error("Salesforce MCP Server running on stdio");
+  const port = process.env.PORT ? parseInt(process.env.PORT) : 3000;
+  const host = process.env.HOST || 'localhost';
+  
+  // Create HTTP server
+  const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
+    const url = new URL(req.url || '/', `http://${req.headers.host}`);
+    
+    if (req.method === 'GET' && url.pathname === '/mcp') {
+      // Handle SSE connection for MCP
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'Content-Type'
+      });
+      
+      const transport = new SSEServerTransport('/mcp', res);
+      await server.connect(transport);
+      
+      // Keep connection alive
+      req.on('close', () => {
+        transport.close();
+      });
+      
+    } else if (req.method === 'POST' && url.pathname === '/mcp') {
+      // Handle POST messages for MCP
+      let body = '';
+      req.on('data', chunk => {
+        body += chunk.toString();
+      });
+      
+      req.on('end', async () => {
+        try {
+          const message = JSON.parse(body);
+          // The SSE transport will handle the message
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ status: 'ok' }));
+        } catch (error) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Invalid JSON' }));
+        }
+      });
+      
+    } else {
+      // Health check endpoint
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ 
+        status: 'ok', 
+        message: 'Salesforce MCP Server is running',
+        endpoints: {
+          mcp: '/mcp',
+          health: '/'
+        }
+      }));
+    }
+  });
+  
+  httpServer.listen(port, host, () => {
+    console.error(`Salesforce MCP Server running on http://${host}:${port}`);
+    console.error(`MCP endpoint: http://${host}:${port}/mcp`);
+  });
 }
 
 runServer().catch((error) => {
